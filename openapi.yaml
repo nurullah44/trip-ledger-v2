@@ -1,0 +1,714 @@
+openapi: 3.1.0
+info:
+  title: Trip Ledger API
+  version: 0.1.0
+  description: |
+    The backend the Trip Ledger frontend expects.
+
+    This contract is derived from the frontend's service layer
+    (`frontend/src/services/ledger-service.ts`) and the behaviour of the mock
+    implementation (`mock-ledger-service.ts`) that currently backs it. The
+    frontend's screens only ever talk to that `LedgerService` interface, so a
+    backend that implements these paths can replace the mock by swapping one
+    module.
+
+    ## Credentials
+
+    Group access is link-based. Each group has two link tokens, and the token in
+    the path is the group credential:
+
+    - **public token** — read the group and make every change except
+      finish/reopen/delete.
+    - **admin token** — everything the public token can do, plus finish,
+      reopen, and delete the group.
+
+    Tokens are long, random, and unguessable. A request whose token resolves to
+    no group fails with `not_found` (404); a public token on an admin-only
+    endpoint fails with `forbidden` (403). The `GET /groups/{token}` response
+    reports which kind of token was used in `access`, and returns `adminToken`
+    only to the admin.
+
+    Admin-only endpoints additionally require a bearer session
+    (`Authorization: Bearer <token>`) obtained from `POST /auth/login` with the
+    operator account's username and password. The session proves who is
+    operating; the admin link token still decides which group may be touched.
+    A request without a valid session fails with `unauthorized` (401) before
+    the link token is looked up.
+
+    ## Responses
+
+    Every mutation returns the full updated `GroupSnapshot`, so the client
+    replaces its cached state with the response instead of re-fetching.
+
+    Errors always have the body `{ "code": ..., "message": ... }`; the client
+    maps `code` to a `LedgerError`, so the code is part of the contract:
+
+    | code           | HTTP | meaning                                            |
+    | -------------- | ---- | -------------------------------------------------- |
+    | `validation`   | 400  | request is malformed or violates a ledger rule      |
+    | `unauthorized` | 401  | missing or invalid bearer session                   |
+    | `forbidden`    | 403  | admin token required                                |
+    | `not_found`    | 404  | link token, group member, or expense does not exist |
+    | `conflict`     | 409  | duplicate participant name                          |
+    | `group_locked` | 409  | group is finished and the change needs it active    |
+
+    ## Rules the backend must enforce
+
+    - Money is an integer number of minor units of the group's single currency
+      (`$10.25` is `1025`; `¥100` is `100`). Amounts are greater than zero;
+      expense split amounts are zero or more and must sum exactly to the
+      expense amount.
+    - An expense has exactly one payer, at least one included participant, no
+      repeated participant, and every participant must belong to the group.
+    - A repayment has different payer and recipient, both members of the group.
+    - Participant names are unique per group, compared case-insensitively after
+      trimming.
+    - A finished group is read-only: every write fails with `group_locked`
+      except `reopen` (admin) and `delete` (admin).
+    - `expenses` are returned newest-first (by `expenseDate`, then `createdAt`);
+      `repayments` by `paymentDate` newest-first. `createdAt`/`updatedAt` are
+      ISO 8601 timestamps.
+
+    There is no optimistic concurrency: concurrent writes are last-write-wins.
+    Real-time collaboration is out of scope, so clients refresh when they
+    navigate back.
+servers:
+  - url: /
+    description: Same origin as the frontend.
+# The group credential is the link token in the path; admin-only operations
+# additionally declare the bearer session. Everything else needs no HTTP auth.
+security: []
+tags:
+  - name: Auth
+    description: Exchange the operator username and password for a bearer session.
+  - name: Groups
+    description: Create, resolve, finish, reopen, and delete a group.
+  - name: Participants
+    description: Add and rename the simple names in a group.
+  - name: Expenses
+    description: Add, replace, and delete expenses.
+  - name: Repayments
+    description: Record money that changed hands outside the app.
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Exchange username and password for a bearer session
+      x-credential: none
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: "Session issued. Send it as `Authorization: Bearer <accessToken>`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /groups:
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Create a group and its two link tokens
+      x-credential: none
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupRequest"
+      responses:
+        "201":
+          description: Group created. Keep `adminToken` private.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedGroup"
+        "400":
+          $ref: "#/components/responses/Validation"
+  /groups/{token}:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    get:
+      tags: [Groups]
+      operationId: getGroupByToken
+      summary: Resolve a link token to the full group snapshot
+      x-credential: public or admin
+      responses:
+        "200":
+          description: |
+            The group, its members, expenses, and repayments. `access` reports
+            which token was used; `adminToken` is present only for the admin
+            token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Groups]
+      operationId: deleteGroup
+      summary: Delete the group (admin)
+      description: Permanently removes the group and everything in it. Allowed whether the group is active or finished.
+      x-credential: admin + bearer
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /groups/{token}/participants:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    post:
+      tags: [Participants]
+      operationId: addParticipant
+      summary: Add a participant
+      x-credential: public or admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParticipantNameRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Snapshot"
+        "400":
+          $ref: "#/components/responses/Validation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+  /groups/{token}/participants/{participantId}:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+      - $ref: "#/components/parameters/ParticipantId"
+    patch:
+      tags: [Participants]
+      operationId: renameParticipant
+      summary: Rename a participant
+      x-credential: public or admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParticipantNameRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Snapshot"
+        "400":
+          $ref: "#/components/responses/Validation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+  /groups/{token}/expenses:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    post:
+      tags: [Expenses]
+      operationId: createExpense
+      summary: Add an expense
+      x-credential: public or admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpenseRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/SnapshotCreated"
+        "400":
+          $ref: "#/components/responses/Validation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+  /groups/{token}/expenses/{expenseId}:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+      - $ref: "#/components/parameters/ExpenseId"
+    put:
+      tags: [Expenses]
+      operationId: updateExpense
+      summary: Replace an expense
+      description: The full expense is replaced, exactly like `createExpense`.
+      x-credential: public or admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpenseRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Snapshot"
+        "400":
+          $ref: "#/components/responses/Validation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+    delete:
+      tags: [Expenses]
+      operationId: deleteExpense
+      summary: Delete an expense
+      x-credential: public or admin
+      responses:
+        "200":
+          $ref: "#/components/responses/Snapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+  /groups/{token}/repayments:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    post:
+      tags: [Repayments]
+      operationId: createRepayment
+      summary: Record a repayment
+      description: Records money that changed hands outside the app; it does not move money.
+      x-credential: public or admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepaymentRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/SnapshotCreated"
+        "400":
+          $ref: "#/components/responses/Validation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+  /groups/{token}/finish:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    post:
+      tags: [Groups]
+      operationId: finishGroup
+      summary: Finish (lock) the group (admin)
+      x-credential: admin + bearer
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Snapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictOrLocked"
+  /groups/{token}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    post:
+      tags: [Groups]
+      operationId: reopenGroup
+      summary: Reopen a finished group (admin)
+      x-credential: admin + bearer
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Snapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token returned by `POST /auth/login`.
+  parameters:
+    Token:
+      name: token
+      in: path
+      required: true
+      description: The group's public or admin link token. Admin-only endpoints require the admin token; a public token gets `forbidden`.
+      schema:
+        type: string
+        minLength: 16
+    ParticipantId:
+      name: participantId
+      in: path
+      required: true
+      schema:
+        type: string
+    ExpenseId:
+      name: expenseId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Snapshot:
+      description: The updated group snapshot.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GroupSnapshot"
+    SnapshotCreated:
+      description: The new resource was added; the body is the updated group snapshot.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GroupSnapshot"
+    Validation:
+      description: The request is malformed or breaks a ledger rule.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
+          example:
+            code: validation
+            message: The split amounts must add up to the total.
+    Unauthorized:
+      description: Missing, malformed, expired, or unknown bearer session.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
+          example:
+            code: unauthorized
+            message: Sign in again to continue.
+    Forbidden:
+      description: The request used the public token on an admin-only endpoint.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
+          example:
+            code: forbidden
+            message: Only the group admin can do this.
+    NotFound:
+      description: The link token, participant, or expense does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
+          example:
+            code: not_found
+            message: This group link is not valid.
+    ConflictOrLocked:
+      description: |
+        Either a participant name is already taken (`conflict`) or the group is
+        finished and this change needs it active (`group_locked`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
+          examples:
+            conflict:
+              value:
+                code: conflict
+                message: Someone with that name is already in the group.
+            group_locked:
+              value:
+                code: group_locked
+                message: This group is finished. Reopen it to make changes.
+  schemas:
+    Currency:
+      type: string
+      enum: [USD, EUR, TRY, GBP, JPY]
+      description: The group's single currency. JPY has no minor units (decimals = 0).
+    GroupStatus:
+      type: string
+      enum: [active, finished]
+      description: A finished group is read-only until an admin reopens it.
+    AccessLevel:
+      type: string
+      enum: [public, admin]
+      description: Which link token resolved this request.
+    SplitMethod:
+      type: string
+      enum: [equal, custom]
+      description: |
+        Records how the split was chosen. `equal` splits are still sent as
+        explicit `splits` amounts, so the field is informative for the UI.
+    Group:
+      type: object
+      additionalProperties: false
+      required: [id, name, currency, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        currency:
+          $ref: "#/components/schemas/Currency"
+        status:
+          $ref: "#/components/schemas/GroupStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          description: Updated on every accepted mutation.
+    Participant:
+      type: object
+      additionalProperties: false
+      required: [id, groupId, name, createdAt]
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ExpenseSplit:
+      type: object
+      additionalProperties: false
+      required: [participantId, amount]
+      properties:
+        participantId:
+          type: string
+        amount:
+          type: integer
+          minimum: 0
+          description: Minor units owed by this participant; the splits must sum to the expense amount.
+    Expense:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          groupId,
+          description,
+          amount,
+          paidByParticipantId,
+          expenseDate,
+          splitMethod,
+          splits,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        description:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+          description: Minor units.
+        paidByParticipantId:
+          type: string
+        expenseDate:
+          type: string
+          format: date
+        splitMethod:
+          $ref: "#/components/schemas/SplitMethod"
+        splits:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ExpenseSplit"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Repayment:
+      type: object
+      additionalProperties: false
+      required: [id, groupId, payerParticipantId, recipientParticipantId, amount, paymentDate, createdAt]
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        payerParticipantId:
+          type: string
+        recipientParticipantId:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+          description: Minor units.
+        paymentDate:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+    GroupSnapshot:
+      type: object
+      additionalProperties: false
+      required: [group, access, participants, expenses, repayments, publicToken]
+      properties:
+        group:
+          $ref: "#/components/schemas/Group"
+        access:
+          $ref: "#/components/schemas/AccessLevel"
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Participant"
+        expenses:
+          type: array
+          description: Newest first — by `expenseDate`, then `createdAt`.
+          items:
+            $ref: "#/components/schemas/Expense"
+        repayments:
+          type: array
+          description: Newest first by `paymentDate`.
+          items:
+            $ref: "#/components/schemas/Repayment"
+        publicToken:
+          type: string
+        adminToken:
+          type: string
+          description: Present only when `access` is `admin`.
+    CreatedGroup:
+      type: object
+      additionalProperties: false
+      required: [group, publicToken, adminToken]
+      properties:
+        group:
+          $ref: "#/components/schemas/Group"
+        publicToken:
+          type: string
+        adminToken:
+          type: string
+    CreateGroupRequest:
+      type: object
+      additionalProperties: false
+      required: [name, currency, participantNames]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Trimmed before storing; must not be blank.
+        currency:
+          $ref: "#/components/schemas/Currency"
+        participantNames:
+          type: array
+          minItems: 2
+          items:
+            type: string
+          description: Trimmed; blank entries are dropped. At least two names must remain.
+    ParticipantNameRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Trimmed; must not be blank and must be unique within the group (case-insensitive).
+    ExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [description, amount, paidByParticipantId, expenseDate, splitMethod, splits]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          description: Trimmed before storing; must not be blank.
+        amount:
+          type: integer
+          minimum: 1
+          description: Minor units.
+        paidByParticipantId:
+          type: string
+          description: Must be a participant of this group.
+        expenseDate:
+          type: string
+          format: date
+        splitMethod:
+          $ref: "#/components/schemas/SplitMethod"
+        splits:
+          type: array
+          minItems: 1
+          description: |
+            One entry per included participant, each a member of this group and
+            listed only once. Amounts are zero or more minor units and must sum
+            exactly to `amount`.
+          items:
+            $ref: "#/components/schemas/ExpenseSplit"
+    RepaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [payerParticipantId, recipientParticipantId, amount, paymentDate]
+      properties:
+        payerParticipantId:
+          type: string
+        recipientParticipantId:
+          type: string
+          description: Must differ from `payerParticipantId`; both must be participants of this group.
+        amount:
+          type: integer
+          minimum: 1
+          description: Minor units.
+        paymentDate:
+          type: string
+          format: date
+    LedgerError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [validation, unauthorized, forbidden, not_found, conflict, group_locked]
+        message:
+          type: string
+          description: Human-readable, safe to show in the UI.
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+    Session:
+      type: object
+      additionalProperties: false
+      required: [accessToken, tokenType, expiresAt]
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          const: bearer
+        expiresAt:
+          type: string
+          format: date-time

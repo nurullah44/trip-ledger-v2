@@ -11,7 +11,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Brand, Eyebrow, PageShell } from "@/components/layout";
@@ -40,9 +40,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { computeBalances, isSettled } from "@/domain/balances";
 import type { Expense, GroupSnapshot, Participant } from "@/domain/types";
 import { ledgerErrorMessage, useGroup, useGroupMutations } from "@/lib/use-ledger";
+import { hasSession, LedgerError, requiresSignIn, signIn } from "@/services";
 
 export const Route = createFileRoute("/g/$token/")({
   component: GroupScreen,
@@ -258,7 +260,7 @@ function ExpensesCard({
               <li key={expense.id} className="flex items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{expense.description}</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <span>{nameOf(expense.paidByParticipantId)} paid</span>
                     <span aria-hidden>·</span>
                     <span>{format(parseISO(expense.expenseDate), "MMM d")}</span>
@@ -266,7 +268,7 @@ function ExpensesCard({
                       {expense.splitMethod === "equal" ? "equal" : "custom"} ·{" "}
                       {expense.splits.length}
                     </Badge>
-                  </p>
+                  </div>
                 </div>
                 <Money
                   minor={expense.amount}
@@ -461,78 +463,189 @@ function ParticipantsCard({
 function AdminControls({ token, finished }: { token: string; finished: boolean }) {
   const router = useRouter();
   const { finishGroup, reopenGroup, deleteGroup } = useGroupMutations(token);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const pendingAction = useRef<(() => void) | null>(null);
+
+  // The API answers 401 for finish/reopen/delete without a bearer session, so
+  // ask for the operator account first and run the button's action afterwards.
+  const runAsAdmin = (action: () => void) => {
+    if (!requiresSignIn || hasSession()) {
+      action();
+      return;
+    }
+    pendingAction.current = action;
+    setSignInOpen(true);
+  };
+
+  const handleError = (error: unknown) => {
+    if (requiresSignIn && error instanceof LedgerError && error.code === "unauthorized") {
+      setSignInOpen(true);
+      toast.error("Sign in again to manage this group.");
+      return;
+    }
+    toast.error(ledgerErrorMessage(error));
+  };
+
+  const runPendingAction = () => {
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    action?.();
+  };
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
-      {finished ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() =>
-            reopenGroup.mutate(undefined, {
-              onSuccess: () => toast.success("Group reopened"),
-              onError: (e) => toast.error(ledgerErrorMessage(e)),
-            })
-          }
-          disabled={reopenGroup.isPending}
-        >
-          <LockOpen className="size-4" /> Reopen
-        </Button>
-      ) : (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() =>
-            finishGroup.mutate(undefined, {
-              onSuccess: () => toast.success("Group finished"),
-              onError: (e) => toast.error(ledgerErrorMessage(e)),
-            })
-          }
-          disabled={finishGroup.isPending}
-        >
-          <Lock className="size-4" /> Finish
-        </Button>
-      )}
-
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
+    <>
+      <div className="flex shrink-0 items-center gap-2">
+        {finished ? (
           <Button
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground hover:text-destructive"
-            aria-label="Delete group"
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              runAsAdmin(() =>
+                reopenGroup.mutate(undefined, {
+                  onSuccess: () => toast.success("Group reopened"),
+                  onError: handleError,
+                }),
+              )
+            }
+            disabled={reopenGroup.isPending}
           >
-            <Trash2 className="size-4" />
+            <LockOpen className="size-4" /> Reopen
           </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this group?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Every expense, repayment, and balance is permanently removed. Both links stop working.
-              This can't be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep group</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() =>
-                deleteGroup.mutate(undefined, {
-                  onSuccess: () => {
-                    toast.success("Group deleted");
-                    router.navigate({ to: "/" });
-                  },
-                  onError: (e) => toast.error(ledgerErrorMessage(e)),
-                })
-              }
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              runAsAdmin(() =>
+                finishGroup.mutate(undefined, {
+                  onSuccess: () => toast.success("Group finished"),
+                  onError: handleError,
+                }),
+              )
+            }
+            disabled={finishGroup.isPending}
+          >
+            <Lock className="size-4" /> Finish
+          </Button>
+        )}
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive"
+              aria-label="Delete group"
             >
-              Delete group
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+              <Trash2 className="size-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this group?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Every expense, repayment, and balance is permanently removed. Both links stop
+                working. This can't be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep group</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() =>
+                  runAsAdmin(() =>
+                    deleteGroup.mutate(undefined, {
+                      onSuccess: () => {
+                        toast.success("Group deleted");
+                        router.navigate({ to: "/" });
+                      },
+                      onError: handleError,
+                    }),
+                  )
+                }
+              >
+                Delete group
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
+      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} onSignedIn={runPendingAction} />
+    </>
+  );
+}
+
+function SignInDialog({
+  open,
+  onOpenChange,
+  onSignedIn,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSignedIn: () => void;
+}) {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!username.trim() || !password || busy) return;
+    setBusy(true);
+    try {
+      await signIn(username.trim(), password);
+      setPassword("");
+      toast.success("Signed in");
+      onSignedIn();
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Admin sign-in</DialogTitle>
+          <DialogDescription>
+            Finishing, reopening, or deleting a group needs the operator account.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="admin-username">Username</Label>
+            <Input
+              id="admin-username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="admin-password">Password</Label>
+            <Input
+              id="admin-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={busy || !username.trim() || !password}>
+            {busy ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -29,7 +29,7 @@ export interface LedgerService {
 }
 
 export type LedgerErrorCode =
-  "not_found" | "forbidden" | "group_locked" | "validation" | "conflict";
+  "validation" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "group_locked";
 
 export class LedgerError extends Error {
   code: LedgerErrorCode;
