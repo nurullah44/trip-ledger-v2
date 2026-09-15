@@ -127,7 +127,7 @@ export function createMockLedgerService(
   }
 
   function snapshot(record: GroupRecord, access: "public" | "admin"): GroupSnapshot {
-    return {
+    const snapshot: GroupSnapshot = {
       group: { ...record.group },
       access,
       participants: record.participants.map((p) => ({ ...p })),
@@ -141,8 +141,9 @@ export function createMockLedgerService(
         .map((r) => ({ ...r }))
         .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate)),
       publicToken: record.publicToken,
-      adminToken: access === "admin" ? record.adminToken : undefined,
     };
+    if (access === "admin") snapshot.adminToken = record.adminToken;
+    return snapshot;
   }
 
   function assertActive(record: GroupRecord) {
@@ -404,5 +405,9 @@ export function createMockLedgerService(
 /** Helper shared by the add-expense screen: build equal splits for selected people. */
 export function buildEqualSplits(total: number, participantIds: string[]) {
   const amounts = splitEqually(total, participantIds.length);
-  return participantIds.map((participantId, i) => ({ participantId, amount: amounts[i] }));
+  return participantIds.map((participantId, i) => ({
+    participantId,
+    // splitEqually returns exactly participantIds.length amounts
+    amount: amounts[i]!,
+  }));
 }

@@ -31,8 +31,9 @@ A no-account, link-based expense-splitting web app. Product scope is in
 ## Commands
 
 The root `Makefile` wraps every command below: `make install`, `make dev`
-(frontend and API together), `make test`, `make lint`, `make check`, `make spec`,
-`make clean`. `make help` lists them.
+(frontend and API together), `make test`, `make typecheck`, `make lint`,
+`make check` (typecheck + lint + tests), `make spec`, `make clean`.
+`make help` lists them.
 
 Frontend (run from `frontend/`):
 
@@ -40,8 +41,9 @@ Frontend (run from `frontend/`):
 - `npm run dev` — Vite dev server
 - `npx vitest run` — the whole test suite
 - `npx vitest run src/domain/money.test.ts` — one test file
+- `npm run typecheck` — `tsc --noEmit` (the Vite build does **not** type-check)
 - `npm run lint` — ESLint
-- `npm run build` — type-check and build
+- `npm run build` — build the app
 
 Backend (run from `backend/`):
 
@@ -58,8 +60,8 @@ Backend (run from `backend/`):
   and `frontend/src/services/` matching it.
 - Backend endpoints come with a test in `backend/tests/`; frontend domain and
   service changes with a case in the neighbouring `*.test.ts`.
-- Finish with `npx vitest run`, `npm run lint`, and `npm run build` in
-  `frontend/`, plus `uv run pytest` in `backend/`.
+- Finish with `npx vitest run`, `npm run typecheck`, `npm run lint`, and
+  `npm run build` in `frontend/`, plus `uv run pytest` in `backend/`.
 
 ## Rules
 

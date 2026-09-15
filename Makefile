@@ -11,7 +11,7 @@ SHELL := bash
 FRONTEND := frontend
 BACKEND := backend
 
-.PHONY: help install dev run frontend backend test test-frontend test-backend lint build check spec clean
+.PHONY: help install dev run frontend backend test test-frontend test-backend typecheck lint build check spec clean
 
 help: ## List the targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -42,10 +42,13 @@ test-backend: ## Backend tests (pytest)
 lint: ## Lint the frontend (eslint)
 	cd $(FRONTEND) && npm run lint
 
-build: ## Type-check and build the frontend
+typecheck: ## Type-check the frontend (tsc; the Vite build does not)
+	cd $(FRONTEND) && npm run typecheck
+
+build: ## Build the frontend (no type-checking)
 	cd $(FRONTEND) && npm run build
 
-check: lint test ## Lint plus both test suites
+check: typecheck lint test ## Type-check, lint, and run both test suites
 
 spec: ## Validate openapi.yaml (downloads the Redocly CLI on first run)
 	npx --yes @redocly/cli@latest lint openapi.yaml

@@ -72,6 +72,7 @@ export function settlementPlan(balances: Balance[]): Transfer[] {
   while (i < debtors.length && j < creditors.length) {
     const d = debtors[i];
     const c = creditors[j];
+    if (!d || !c) break; // the loop condition guarantees both; this narrows the types
     const amount = Math.min(d.amount, c.amount);
     if (amount > 0) {
       transfers.push({ fromParticipantId: d.id, toParticipantId: c.id, amount });

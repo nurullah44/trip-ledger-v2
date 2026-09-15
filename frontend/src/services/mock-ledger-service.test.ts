@@ -9,6 +9,13 @@ import {
 
 let service = createMockLedgerService(createMemoryStorage());
 
+/** `noUncheckedIndexedAccess` types every `arr[i]` as possibly undefined; these tests index values they just created. */
+function at<T>(values: T[], index: number): T {
+  const value = values[index];
+  if (value === undefined) throw new Error(`Expected a value at index ${index}`);
+  return value;
+}
+
 async function newGroup() {
   const created = await service.createGroup({
     name: "Iceland in a Week",
@@ -59,7 +66,7 @@ describe("expenses", () => {
     const next = await service.createExpense(created.publicToken, {
       description: "Dinner",
       amount: 1000,
-      paidByParticipantId: ids[0],
+      paidByParticipantId: at(ids, 0),
       expenseDate: "2026-05-01",
       splitMethod: "equal",
       splits: buildEqualSplits(1000, ids),
@@ -75,10 +82,10 @@ describe("expenses", () => {
     const base = {
       description: "Taxi",
       amount: 1000,
-      paidByParticipantId: ids[0],
+      paidByParticipantId: at(ids, 0),
       expenseDate: "2026-05-01",
       splitMethod: "custom" as const,
-      splits: [{ participantId: ids[0], amount: 1000 }],
+      splits: [{ participantId: at(ids, 0), amount: 1000 }],
     };
     await expect(
       service.createExpense(created.publicToken, { ...base, amount: 0 }),
@@ -98,7 +105,7 @@ describe("expenses", () => {
     await expect(
       service.createExpense(created.publicToken, {
         ...base,
-        splits: [{ participantId: ids[0], amount: 900 }],
+        splits: [{ participantId: at(ids, 0), amount: 900 }],
       }),
     ).rejects.toMatchObject({ code: "validation" });
   });
@@ -109,27 +116,27 @@ describe("expenses", () => {
     const withExpense = await service.createExpense(created.publicToken, {
       description: "Hotel",
       amount: 30000,
-      paidByParticipantId: ids[0],
+      paidByParticipantId: at(ids, 0),
       expenseDate: "2026-05-01",
       splitMethod: "custom",
       splits: [
-        { participantId: ids[0], amount: 10000 },
-        { participantId: ids[1], amount: 8000 },
-        { participantId: ids[2], amount: 12000 },
+        { participantId: at(ids, 0), amount: 10000 },
+        { participantId: at(ids, 1), amount: 8000 },
+        { participantId: at(ids, 2), amount: 12000 },
       ],
     });
-    const expenseId = withExpense.expenses[0].id;
+    const expenseId = at(withExpense.expenses, 0).id;
 
     const edited = await service.updateExpense(created.publicToken, expenseId, {
       description: "Hotel + breakfast",
       amount: 30000,
-      paidByParticipantId: ids[1],
+      paidByParticipantId: at(ids, 1),
       expenseDate: "2026-05-02",
       splitMethod: "equal",
       splits: buildEqualSplits(30000, ids),
     });
-    expect(edited.expenses[0].description).toBe("Hotel + breakfast");
-    expect(edited.expenses[0].paidByParticipantId).toBe(ids[1]);
+    expect(at(edited.expenses, 0).description).toBe("Hotel + breakfast");
+    expect(at(edited.expenses, 0).paidByParticipantId).toBe(at(ids, 1));
 
     const deleted = await service.deleteExpense(created.publicToken, expenseId);
     expect(deleted.expenses).toHaveLength(0);
@@ -143,16 +150,16 @@ describe("participants", () => {
     await service.createExpense(created.publicToken, {
       description: "Ferry",
       amount: 600,
-      paidByParticipantId: ids[0],
+      paidByParticipantId: at(ids, 0),
       expenseDate: "2026-05-01",
       splitMethod: "equal",
       splits: buildEqualSplits(600, ids),
     });
     const added = await service.addParticipant(created.publicToken, "Jordan");
     expect(added.participants).toHaveLength(4);
-    const renamed = await service.renameParticipant(created.publicToken, ids[0], "Alexandra");
-    expect(renamed.participants[0].name).toBe("Alexandra");
-    expect(renamed.expenses[0].paidByParticipantId).toBe(ids[0]);
+    const renamed = await service.renameParticipant(created.publicToken, at(ids, 0), "Alexandra");
+    expect(at(renamed.participants, 0).name).toBe("Alexandra");
+    expect(at(renamed.expenses, 0).paidByParticipantId).toBe(at(ids, 0));
   });
 
   it("rejects duplicate names", async () => {
@@ -166,7 +173,10 @@ describe("participants", () => {
 describe("repayments and settling up", () => {
   it("recalculates the plan until the group is settled", async () => {
     const { created, snapshot } = await newGroup();
-    const [alex, sam, maya] = snapshot.participants.map((p) => p.id);
+    const ids = snapshot.participants.map((p) => p.id);
+    const alex = at(ids, 0);
+    const sam = at(ids, 1);
+    const maya = at(ids, 2);
     let state = await service.createExpense(created.publicToken, {
       description: "Cabin",
       amount: 9000,
@@ -196,7 +206,9 @@ describe("repayments and settling up", () => {
 
   it("allows partial repayments that differ from the plan", async () => {
     const { created, snapshot } = await newGroup();
-    const [alex, sam] = snapshot.participants.map((p) => p.id);
+    const ids = snapshot.participants.map((p) => p.id);
+    const alex = at(ids, 0);
+    const sam = at(ids, 1);
     const state = await service.createRepayment(created.publicToken, {
       payerParticipantId: sam,
       recipientParticipantId: alex,
@@ -208,7 +220,8 @@ describe("repayments and settling up", () => {
 
   it("rejects self-payments, zero amounts and outsiders", async () => {
     const { created, snapshot } = await newGroup();
-    const [alex] = snapshot.participants.map((p) => p.id);
+    const ids = snapshot.participants.map((p) => p.id);
+    const alex = at(ids, 0);
     await expect(
       service.createRepayment(created.publicToken, {
         payerParticipantId: alex,
@@ -251,7 +264,7 @@ describe("group lifecycle", () => {
       service.createExpense(created.publicToken, {
         description: "Late night",
         amount: 100,
-        paidByParticipantId: ids[0],
+        paidByParticipantId: at(ids, 0),
         expenseDate: "2026-05-09",
         splitMethod: "equal",
         splits: buildEqualSplits(100, ids),
