@@ -10,33 +10,89 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GTokenIndexRouteImport } from './routes/g.$token.index'
+import { Route as GTokenSettleRouteImport } from './routes/g.$token.settle'
+import { Route as GTokenExpenseExpenseIdRouteImport } from './routes/g.$token.expense.$expenseId'
+import { Route as GTokenExpenseNewRouteImport } from './routes/g.$token.expense.new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GTokenIndexRoute = GTokenIndexRouteImport.update({
+  id: '/g/$token/',
+  path: '/g/$token/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GTokenSettleRoute = GTokenSettleRouteImport.update({
+  id: '/g/$token/settle',
+  path: '/g/$token/settle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GTokenExpenseExpenseIdRoute = GTokenExpenseExpenseIdRouteImport.update({
+  id: '/g/$token/expense/$expenseId',
+  path: '/g/$token/expense/$expenseId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GTokenExpenseNewRoute = GTokenExpenseNewRouteImport.update({
+  id: '/g/$token/expense/new',
+  path: '/g/$token/expense/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/g/$token/settle': typeof GTokenSettleRoute
+  '/g/$token/': typeof GTokenIndexRoute
+  '/g/$token/expense/$expenseId': typeof GTokenExpenseExpenseIdRoute
+  '/g/$token/expense/new': typeof GTokenExpenseNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/g/$token/settle': typeof GTokenSettleRoute
+  '/g/$token': typeof GTokenIndexRoute
+  '/g/$token/expense/$expenseId': typeof GTokenExpenseExpenseIdRoute
+  '/g/$token/expense/new': typeof GTokenExpenseNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/g/$token/settle': typeof GTokenSettleRoute
+  '/g/$token/': typeof GTokenIndexRoute
+  '/g/$token/expense/$expenseId': typeof GTokenExpenseExpenseIdRoute
+  '/g/$token/expense/new': typeof GTokenExpenseNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/g/$token/settle'
+    | '/g/$token/'
+    | '/g/$token/expense/$expenseId'
+    | '/g/$token/expense/new'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/g/$token/settle'
+    | '/g/$token'
+    | '/g/$token/expense/$expenseId'
+    | '/g/$token/expense/new'
+  id:
+    | '__root__'
+    | '/'
+    | '/g/$token/settle'
+    | '/g/$token/'
+    | '/g/$token/expense/$expenseId'
+    | '/g/$token/expense/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  GTokenSettleRoute: typeof GTokenSettleRoute
+  GTokenIndexRoute: typeof GTokenIndexRoute
+  GTokenExpenseExpenseIdRoute: typeof GTokenExpenseExpenseIdRoute
+  GTokenExpenseNewRoute: typeof GTokenExpenseNewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +104,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/g/$token/': {
+      id: '/g/$token/'
+      path: '/g/$token'
+      fullPath: '/g/$token/'
+      preLoaderRoute: typeof GTokenIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/g/$token/settle': {
+      id: '/g/$token/settle'
+      path: '/g/$token/settle'
+      fullPath: '/g/$token/settle'
+      preLoaderRoute: typeof GTokenSettleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/g/$token/expense/$expenseId': {
+      id: '/g/$token/expense/$expenseId'
+      path: '/g/$token/expense/$expenseId'
+      fullPath: '/g/$token/expense/$expenseId'
+      preLoaderRoute: typeof GTokenExpenseExpenseIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/g/$token/expense/new': {
+      id: '/g/$token/expense/new'
+      path: '/g/$token/expense/new'
+      fullPath: '/g/$token/expense/new'
+      preLoaderRoute: typeof GTokenExpenseNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  GTokenSettleRoute: GTokenSettleRoute,
+  GTokenIndexRoute: GTokenIndexRoute,
+  GTokenExpenseExpenseIdRoute: GTokenExpenseExpenseIdRoute,
+  GTokenExpenseNewRoute: GTokenExpenseNewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

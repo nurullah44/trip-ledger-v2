@@ -120,7 +120,10 @@ export function createMockLedgerService(
   function resolve(db: Db, token: string) {
     const record = db.groups.find((g) => g.publicToken === token || g.adminToken === token);
     if (!record) throw new LedgerError("not_found", "This group link is not valid.");
-    return { record, access: record.adminToken === token ? ("admin" as const) : ("public" as const) };
+    return {
+      record,
+      access: record.adminToken === token ? ("admin" as const) : ("public" as const),
+    };
   }
 
   function snapshot(record: GroupRecord, access: "public" | "admin"): GroupSnapshot {
@@ -130,8 +133,9 @@ export function createMockLedgerService(
       participants: record.participants.map((p) => ({ ...p })),
       expenses: record.expenses
         .map((e) => ({ ...e, splits: e.splits.map((s) => ({ ...s })) }))
-        .sort((a, b) =>
-          b.expenseDate.localeCompare(a.expenseDate) || b.createdAt.localeCompare(a.createdAt),
+        .sort(
+          (a, b) =>
+            b.expenseDate.localeCompare(a.expenseDate) || b.createdAt.localeCompare(a.createdAt),
         ),
       repayments: record.repayments
         .map((r) => ({ ...r }))

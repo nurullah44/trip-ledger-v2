@@ -1,6 +1,8 @@
 # Trip Ledger
 
-Create a system design interview application. 
+A lightweight expense-splitting web app for trips and groups. Create a group,
+add expenses, see who owes whom, and settle up with the fewest transfers — no
+accounts, just a shareable link.
 
 # Expense Splitting Tool — Product Scope
 
@@ -908,22 +910,10 @@ There are no unresolved questions that block an initial implementation.
 
 Remaining choices are mostly implementation and UX details rather than product-direction decisions, so they can be decided during design and development without expanding the product scope.
 
-
-
 Centralize every backend call in one services layer, and create a mock
 implementation of it so the whole app runs without a real backend.
 
 Add tests.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/fb4c3829-5b49-4c75-89ea-85120ed3bec3).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 

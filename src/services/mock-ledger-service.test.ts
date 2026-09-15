@@ -176,7 +176,9 @@ describe("repayments and settling up", () => {
       splits: buildEqualSplits(9000, [alex, sam, maya]),
     });
 
-    let plan = settlementPlan(computeBalances(state.participants, state.expenses, state.repayments));
+    const plan = settlementPlan(
+      computeBalances(state.participants, state.expenses, state.repayments),
+    );
     expect(plan).toHaveLength(2);
 
     for (const transfer of plan) {
