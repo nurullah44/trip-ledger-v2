@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from fastapi.testclient import TestClient
 
+from app.database import Database
 from app.errors import STATUS_BY_CODE
 from app.main import create_app
 from app.seed import DEMO_TOKENS
@@ -27,7 +28,7 @@ def _implemented_routes() -> set[tuple[str, str]]:
     """Every path+method FastAPI serves, read off the app's own OpenAPI schema."""
     return {
         (method.upper(), _normalized(path))
-        for path, item in create_app().openapi()["paths"].items()
+        for path, item in create_app(Database("sqlite://"), seed=False).openapi()["paths"].items()
         for method in item
         if method in METHODS
     }

@@ -1,19 +1,42 @@
 # Trip Ledger — backend
 
-FastAPI implementation of [`../openapi.yaml`](../openapi.yaml), backed by an
-in-memory store that is seeded with demo groups on startup. State resets every
-time the process restarts.
+FastAPI implementation of [`../openapi.yaml`](../openapi.yaml), backed by a
+SQLAlchemy database. An empty database is seeded with demo groups on startup;
+anything already stored is kept.
 
 ## Commands
 
 Run from `backend/`:
 
 - `uv sync` — install dependencies (and create `.venv`)
-- `uv run uvicorn app.main:app --reload` — dev server on <http://localhost:8000> (`/docs` for the interactive schema)
+- `uv run uvicorn app.main:app --reload --reload-dir app` — dev server on <http://localhost:8000> (`/docs` for the interactive schema)
 - `uv run pytest` — the whole suite
 - `uv run pytest tests/test_expenses.py` — one test file
 
+## Database
+
+The server connects to whatever `TRIP_LEDGER_DATABASE_URL` points at:
+
+```sh
+TRIP_LEDGER_DATABASE_URL=sqlite:///./trip-ledger.db   uv run uvicorn app.main:app   # default
+TRIP_LEDGER_DATABASE_URL=sqlite:////tmp/trip.db       uv run uvicorn app.main:app
+```
+
+No code changes are needed to move to another database — install the driver and
+change the URL:
+
+```sh
+uv sync --extra postgres
+TRIP_LEDGER_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/trip_ledger uv run uvicorn app.main:app
+```
+
+Tables are created on startup (`create_all`), which is enough for SQLite and a
+first Postgres run; a production deployment should add migrations (Alembic) at
+that point. To start over, delete the SQLite file and restart.
+
 ## Seeded demo data
+
+Written only into an empty database:
 
 | Group       | Currency | Status   | Public token                          | Admin token                          |
 | ----------- | -------- | -------- | ------------------------------------- | ------------------------------------ |
@@ -31,17 +54,22 @@ sessions are stored hashed, so neither survives in the clear in the store.
 ## Layout
 
 - `app/main.py` — `create_app()` and the module-level `app` uvicorn targets.
+- `app/database.py` — engine, session factory, and `TRIP_LEDGER_DATABASE_URL`.
+- `app/tables.py` — the SQLAlchemy tables.
 - `app/models.py` — Pydantic models mirroring the OpenAPI schemas (snake_case in Python, camelCase in JSON).
-- `app/store.py` — the in-memory store: lock, tokens, validation rules, snapshots.
-- `app/auth.py` — password hashing, session tokens, the `require_session` dependency.
+- `app/store.py` — the store: resolves tokens, validates, writes rows, builds snapshots.
+- `app/deps.py` — one session and one store per request, plus `require_session`.
+- `app/auth.py` — password hashing and session tokens.
 - `app/errors.py` — `LedgerError` and the `{code, message}` handlers.
 - `app/seed.py` — the demo groups and the operator account.
 - `app/routers/` — one router per resource, plus `auth`.
-- `tests/` — API tests with `TestClient`, including a check that the app still matches `openapi.yaml`.
+- `tests/` — API tests with `TestClient`, a database/persistence suite, and a check that the app still matches `openapi.yaml`.
 
 ## Notes
 
-- There is no database; the store lives in process memory behind a lock.
+- Rows live in the database, not in memory: one session per request, committed
+  when the request succeeds. The schema uses only portable column types, so
+  moving to Postgres is an environment change plus its driver.
 - Bearer sessions last 12 hours (`SESSION_TTL` in `app/auth.py`).
 - Auth is scoped to the three admin endpoints; everything else authenticates
   with the group link token alone, so the frontend keeps working without a

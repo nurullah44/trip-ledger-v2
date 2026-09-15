@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Response
 
-from ..auth import require_session
-from ..deps import get_store
+from ..deps import get_store, require_session
 from ..models import CreateGroupRequest, CreatedGroup, GroupSnapshot
 from ..store import LedgerStore
 

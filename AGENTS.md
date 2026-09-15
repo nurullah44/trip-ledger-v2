@@ -25,8 +25,9 @@ A no-account, link-based expense-splitting web app. Product scope is in
 - `docs/` — `specs.md` (product scope), `architecture.md`, and `design/` (the
   vendored OpenDesign "Clay receipt" system; `docs/design/clay/tokens.css` is the
   canonical colour block).
-- `backend/` — the FastAPI service implementing `openapi.yaml` against a seeded
-  in-memory store (`app/` package, `tests/` for backend tests).
+- `backend/` — the FastAPI service implementing `openapi.yaml` against a
+  SQLAlchemy database chosen by `TRIP_LEDGER_DATABASE_URL` (SQLite by default,
+  seeded with demo data when empty; `app/` package, `tests/` for backend tests).
 
 ## Commands
 
@@ -50,7 +51,7 @@ Backend (run from `backend/`):
 - `uv sync` — install dependencies
 - `uv run pytest` — the whole suite
 - `uv run pytest tests/test_groups.py` — one test file
-- `uv run uvicorn app.main:app --reload --host 0.0.0.0` — API dev server (docs at `/docs`)
+- `uv run uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0` — API dev server (docs at `/docs`)
 
 ## Workflow
 
@@ -79,6 +80,8 @@ Backend (run from `backend/`):
 - Backend dependencies are added in `backend/pyproject.toml` with `uv add`;
   frontend dependencies in `frontend/package.json`. Confirm with the user before
   adding one.
+- Backend storage goes through SQLAlchemy and `TRIP_LEDGER_DATABASE_URL`; keep
+  the schema portable (no dialect-specific SQL or column types).
 - Colour lives in the tokens: edit `docs/design/clay/tokens.css` and the mirrored
   `:root` block in `frontend/src/styles.css` together, then style with the
   semantic shadcn classes.

@@ -26,6 +26,11 @@ __pycache__/
 .venv/
 .pytest_cache/
 
+# Local databases
+*.db
+*.db-journal
+*.sqlite3
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

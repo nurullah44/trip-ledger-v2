@@ -1,13 +1,14 @@
-"""Demo data: the store starts with three groups and one operator account.
-
-The tokens are fixed so the frontend can be pointed at a known group.
+"""Demo data: three groups and one operator account, written once into an empty
+database. The tokens are fixed so the frontend can be pointed at a known group.
 """
 
 import os
 from datetime import date, datetime, timezone
 
-from .models import Expense, ExpenseSplit, Group, Participant, Repayment
-from .store import GroupRecord, LedgerStore
+from sqlalchemy import func, select
+
+from .store import GroupSeed, LedgerStore, SeedExpense, SeedParticipant, SeedRepayment
+from .tables import GroupRow, UserRow
 
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin12345"
@@ -32,191 +33,159 @@ def _at(year: int, month: int, day: int, hour: int = 10, minute: int = 0) -> dat
     return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
 
 
-def _split(participant_id: str, amount: int) -> ExpenseSplit:
-    return ExpenseSplit(participant_id=participant_id, amount=amount)
-
-
-def _lisbon_record() -> GroupRecord:
+def _lisbon_seed() -> GroupSeed:
     group_id = "grp-lisbon"
     tokens = DEMO_TOKENS["lisbon"]
-    participants = [
-        Participant(id="lis-alex", group_id=group_id, name="Alex", created_at=_at(2026, 9, 11)),
-        Participant(id="lis-sam", group_id=group_id, name="Sam", created_at=_at(2026, 9, 11)),
-        Participant(id="lis-maya", group_id=group_id, name="Maya", created_at=_at(2026, 9, 11)),
-        Participant(id="lis-jordan", group_id=group_id, name="Jordan", created_at=_at(2026, 9, 11)),
-    ]
-    expenses = [
-        Expense(
-            id="exp-hotel",
-            group_id=group_id,
-            description="Hotel Alfama",
-            amount=30000,
-            paid_by_participant_id="lis-alex",
-            expense_date=date(2026, 9, 12),
-            split_method="custom",
-            splits=[
-                _split("lis-alex", 12000),
-                _split("lis-sam", 8000),
-                _split("lis-maya", 6000),
-                _split("lis-jordan", 4000),
-            ],
-            created_at=_at(2026, 9, 12, 9),
-            updated_at=_at(2026, 9, 12, 9),
-        ),
-        Expense(
-            id="exp-tram",
-            group_id=group_id,
-            description="Tram 28 tickets",
-            amount=1440,
-            paid_by_participant_id="lis-maya",
-            expense_date=date(2026, 9, 13),
-            split_method="equal",
-            splits=[
-                _split("lis-alex", 360),
-                _split("lis-sam", 360),
-                _split("lis-maya", 360),
-                _split("lis-jordan", 360),
-            ],
-            created_at=_at(2026, 9, 13, 11),
-            updated_at=_at(2026, 9, 13, 11),
-        ),
-        Expense(
-            id="exp-dinner",
-            group_id=group_id,
-            description="Dinner at Time Out",
-            amount=8765,
-            paid_by_participant_id="lis-sam",
-            expense_date=date(2026, 9, 13),
-            split_method="equal",
-            splits=[
-                _split("lis-alex", 2192),
-                _split("lis-sam", 2191),
-                _split("lis-maya", 2191),
-                _split("lis-jordan", 2191),
-            ],
-            created_at=_at(2026, 9, 13, 20),
-            updated_at=_at(2026, 9, 13, 20),
-        ),
-        Expense(
-            id="exp-pasteis",
-            group_id=group_id,
-            description="Pastéis de Belém",
-            amount=1275,
-            paid_by_participant_id="lis-jordan",
-            expense_date=date(2026, 9, 14),
-            split_method="equal",
-            splits=[
-                _split("lis-alex", 319),
-                _split("lis-sam", 319),
-                _split("lis-maya", 319),
-                _split("lis-jordan", 318),
-            ],
-            created_at=_at(2026, 9, 14, 16),
-            updated_at=_at(2026, 9, 14, 16),
-        ),
-    ]
-    repayments = [
-        Repayment(
-            id="rep-jordan-alex",
-            group_id=group_id,
-            payer_participant_id="lis-jordan",
-            recipient_participant_id="lis-alex",
-            amount=2500,
-            payment_date=date(2026, 9, 15),
-            created_at=_at(2026, 9, 15, 9),
-        )
-    ]
-    return GroupRecord(
-        group=Group(
-            id=group_id,
-            name="Lisbon Trip",
-            currency="EUR",
-            status="active",
-            created_at=_at(2026, 9, 11),
-            updated_at=_at(2026, 9, 15),
-        ),
+    return GroupSeed(
+        id=group_id,
+        name="Lisbon Trip",
+        currency="EUR",
+        status="active",
+        created_at=_at(2026, 9, 11),
+        updated_at=_at(2026, 9, 15),
         public_token=tokens["public"],
         admin_token=tokens["admin"],
-        participants=participants,
-        expenses=expenses,
-        repayments=repayments,
+        participants=[
+            SeedParticipant(id="lis-alex", name="Alex"),
+            SeedParticipant(id="lis-sam", name="Sam"),
+            SeedParticipant(id="lis-maya", name="Maya"),
+            SeedParticipant(id="lis-jordan", name="Jordan"),
+        ],
+        expenses=[
+            SeedExpense(
+                id="exp-hotel",
+                description="Hotel Alfama",
+                amount=30000,
+                paid_by_participant_id="lis-alex",
+                expense_date=date(2026, 9, 12),
+                split_method="custom",
+                splits=[
+                    ("lis-alex", 12000),
+                    ("lis-sam", 8000),
+                    ("lis-maya", 6000),
+                    ("lis-jordan", 4000),
+                ],
+                created_at=_at(2026, 9, 12, 9),
+            ),
+            SeedExpense(
+                id="exp-tram",
+                description="Tram 28 tickets",
+                amount=1440,
+                paid_by_participant_id="lis-maya",
+                expense_date=date(2026, 9, 13),
+                split_method="equal",
+                splits=[
+                    ("lis-alex", 360),
+                    ("lis-sam", 360),
+                    ("lis-maya", 360),
+                    ("lis-jordan", 360),
+                ],
+                created_at=_at(2026, 9, 13, 11),
+            ),
+            SeedExpense(
+                id="exp-dinner",
+                description="Dinner at Time Out",
+                amount=8765,
+                paid_by_participant_id="lis-sam",
+                expense_date=date(2026, 9, 13),
+                split_method="equal",
+                splits=[
+                    ("lis-alex", 2192),
+                    ("lis-sam", 2191),
+                    ("lis-maya", 2191),
+                    ("lis-jordan", 2191),
+                ],
+                created_at=_at(2026, 9, 13, 20),
+            ),
+            SeedExpense(
+                id="exp-pasteis",
+                description="Pastéis de Belém",
+                amount=1275,
+                paid_by_participant_id="lis-jordan",
+                expense_date=date(2026, 9, 14),
+                split_method="equal",
+                splits=[
+                    ("lis-alex", 319),
+                    ("lis-sam", 319),
+                    ("lis-maya", 319),
+                    ("lis-jordan", 318),
+                ],
+                created_at=_at(2026, 9, 14, 16),
+            ),
+        ],
+        repayments=[
+            SeedRepayment(
+                id="rep-jordan-alex",
+                payer_participant_id="lis-jordan",
+                recipient_participant_id="lis-alex",
+                amount=2500,
+                payment_date=date(2026, 9, 15),
+                created_at=_at(2026, 9, 15, 9),
+            )
+        ],
     )
 
 
-def _ski_record() -> GroupRecord:
+def _ski_seed() -> GroupSeed:
     group_id = "grp-ski"
     tokens = DEMO_TOKENS["ski"]
-    participants = [
-        Participant(id="ski-alex", group_id=group_id, name="Alex", created_at=_at(2026, 1, 15)),
-        Participant(id="ski-sam", group_id=group_id, name="Sam", created_at=_at(2026, 1, 15)),
-        Participant(id="ski-maya", group_id=group_id, name="Maya", created_at=_at(2026, 1, 15)),
-    ]
-    expenses = [
-        Expense(
-            id="exp-cabin",
-            group_id=group_id,
-            description="Cabin rental",
-            amount=42000,
-            paid_by_participant_id="ski-sam",
-            expense_date=date(2026, 1, 18),
-            split_method="equal",
-            splits=[_split("ski-alex", 14000), _split("ski-sam", 14000), _split("ski-maya", 14000)],
-            created_at=_at(2026, 1, 18, 12),
-            updated_at=_at(2026, 1, 18, 12),
-        )
-    ]
-    return GroupRecord(
-        group=Group(
-            id=group_id,
-            name="Ski Weekend",
-            currency="USD",
-            status="finished",
-            created_at=_at(2026, 1, 15),
-            updated_at=_at(2026, 1, 20),
-        ),
+    return GroupSeed(
+        id=group_id,
+        name="Ski Weekend",
+        currency="USD",
+        status="finished",
+        created_at=_at(2026, 1, 15),
+        updated_at=_at(2026, 1, 20),
         public_token=tokens["public"],
         admin_token=tokens["admin"],
-        participants=participants,
-        expenses=expenses,
-        repayments=[],
+        participants=[
+            SeedParticipant(id="ski-alex", name="Alex"),
+            SeedParticipant(id="ski-sam", name="Sam"),
+            SeedParticipant(id="ski-maya", name="Maya"),
+        ],
+        expenses=[
+            SeedExpense(
+                id="exp-cabin",
+                description="Cabin rental",
+                amount=42000,
+                paid_by_participant_id="ski-sam",
+                expense_date=date(2026, 1, 18),
+                split_method="equal",
+                splits=[("ski-alex", 14000), ("ski-sam", 14000), ("ski-maya", 14000)],
+                created_at=_at(2026, 1, 18, 12),
+            )
+        ],
     )
 
 
-def _cappadocia_record() -> GroupRecord:
+def _cappadocia_seed() -> GroupSeed:
     group_id = "grp-cappadocia"
     tokens = DEMO_TOKENS["cappadocia"]
-    participants = [
-        Participant(id="cap-deniz", group_id=group_id, name="Deniz", created_at=_at(2026, 5, 2)),
-        Participant(id="cap-emre", group_id=group_id, name="Emre", created_at=_at(2026, 5, 2)),
-    ]
-    expenses = [
-        Expense(
-            id="exp-balloon",
-            group_id=group_id,
-            description="Balloon ride",
-            amount=900000,
-            paid_by_participant_id="cap-deniz",
-            expense_date=date(2026, 5, 3),
-            split_method="equal",
-            splits=[_split("cap-deniz", 450000), _split("cap-emre", 450000)],
-            created_at=_at(2026, 5, 3, 6),
-            updated_at=_at(2026, 5, 3, 6),
-        )
-    ]
-    return GroupRecord(
-        group=Group(
-            id=group_id,
-            name="Cappadocia",
-            currency="TRY",
-            status="active",
-            created_at=_at(2026, 5, 2),
-            updated_at=_at(2026, 5, 3),
-        ),
+    return GroupSeed(
+        id=group_id,
+        name="Cappadocia",
+        currency="TRY",
+        status="active",
+        created_at=_at(2026, 5, 2),
+        updated_at=_at(2026, 5, 3),
         public_token=tokens["public"],
         admin_token=tokens["admin"],
-        participants=participants,
-        expenses=expenses,
-        repayments=[],
+        participants=[
+            SeedParticipant(id="cap-deniz", name="Deniz"),
+            SeedParticipant(id="cap-emre", name="Emre"),
+        ],
+        expenses=[
+            SeedExpense(
+                id="exp-balloon",
+                description="Balloon ride",
+                amount=900000,
+                paid_by_participant_id="cap-deniz",
+                expense_date=date(2026, 5, 3),
+                split_method="equal",
+                splits=[("cap-deniz", 450000), ("cap-emre", 450000)],
+                created_at=_at(2026, 5, 3, 6),
+            )
+        ],
     )
 
 
@@ -226,8 +195,32 @@ def seed_demo_data(
     username: str = DEFAULT_ADMIN_USERNAME,
     password: str | None = None,
 ) -> LedgerStore:
-    """Create the operator account and three groups. Returns the same store."""
-    store.create_user(username, password or os.environ.get("TRIP_LEDGER_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD))
-    for record in (_lisbon_record(), _ski_record(), _cappadocia_record()):
-        store.insert_seed_group(record)
+    """Write the operator account and the three demo groups. Returns the store."""
+    store.create_user(
+        username,
+        password or os.environ.get("TRIP_LEDGER_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD),
+    )
+    for seed in (_lisbon_seed(), _ski_seed(), _cappadocia_seed()):
+        store.insert_seed_group(seed)
     return store
+
+
+def seed_if_empty(
+    store: LedgerStore,
+    *,
+    username: str = DEFAULT_ADMIN_USERNAME,
+    password: str | None = None,
+) -> bool:
+    """Seed only what is missing, so a restart on an existing database is a no-op."""
+    seeded = False
+    if not store.session.scalar(select(func.count()).select_from(GroupRow)):
+        for seed in (_lisbon_seed(), _ski_seed(), _cappadocia_seed()):
+            store.insert_seed_group(seed)
+        seeded = True
+    if not store.session.scalar(select(func.count()).select_from(UserRow)):
+        store.create_user(
+            username,
+            password or os.environ.get("TRIP_LEDGER_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD),
+        )
+        seeded = True
+    return seeded

@@ -61,11 +61,5 @@ def bearer_token(request: Request) -> str:
     return value.strip()
 
 
-def require_session(request: Request) -> str:
-    """FastAPI dependency: returns the authenticated user id or raises 401."""
-    token = bearer_token(request)
-    return request.app.state.store.resolve_session(token)
-
-
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)

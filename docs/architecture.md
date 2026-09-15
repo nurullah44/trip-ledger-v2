@@ -18,9 +18,11 @@ asks for the operator account when a session is missing.
 ## Backend
 
 FastAPI, managed with `uv`, in `backend/` (`app/` package, `tests/` for backend
-tests). It implements `openapi.yaml` against an in-memory store seeded with
-three demo groups (`backend/app/seed.py`), so the API serves real data the
-moment it starts; state resets on restart.
+tests). It implements `openapi.yaml` on a SQLAlchemy database: one session per
+request (`app/database.py`, `app/store.py`), portable tables (`app/tables.py`),
+and an empty database seeded with three demo groups (`app/seed.py`).
+`TRIP_LEDGER_DATABASE_URL` picks the database — SQLite by default, and another
+database needs only its driver plus a different URL, no code change.
 
 Group access stays link-based. The admin operations — finish, reopen, delete —
 additionally require a bearer session for an operator account whose password is

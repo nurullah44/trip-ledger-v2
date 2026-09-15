@@ -29,7 +29,7 @@ frontend: ## Vite dev server on http://localhost:8080
 	cd $(FRONTEND) && npm run dev
 
 backend: ## FastAPI dev server on http://localhost:8000 (interactive docs at http://localhost:8000/docs)
-	cd $(BACKEND) && uv run uvicorn app.main:app --reload --host 0.0.0.0
+	cd $(BACKEND) && uv run uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0
 
 test: test-frontend test-backend ## Run both test suites
 

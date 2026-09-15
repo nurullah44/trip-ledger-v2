@@ -6,7 +6,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
+    "sqlalchemy>=2.0.53",
     "uvicorn[standard]>=0.34",
+]
+
+[project.optional-dependencies]
+postgres = [
+    "psycopg[binary]>=3.2",
 ]
 
 [dependency-groups]
